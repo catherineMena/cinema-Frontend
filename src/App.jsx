@@ -3,6 +3,8 @@ import SeatsSelector from './pages/SeatSelector';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import ProtectedRoute from './routes/ProtectedRoute';
+import ReservationSummary from './pages/ReservationSummary'; // ✅ IMPORTACIÓN CORRECTA
+
 
 function App() {
   return (
@@ -15,6 +17,8 @@ function App() {
         <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
         <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
         <Route path="/seats/:cinemaId" element={<ProtectedRoute><SeatsSelector /></ProtectedRoute>} />
+      <Route path="/resumen" element={<ReservationSummary />} />
+
       </Routes>
     </BrowserRouter>
   );

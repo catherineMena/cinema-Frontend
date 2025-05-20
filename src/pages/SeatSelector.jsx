@@ -1,289 +1,200 @@
+// src/pages/SeatSelector.jsx
 import { useEffect, useState } from 'react';
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import {
-  Box,
-  Button,
-  Typography,
-  CircularProgress,
-  Alert,
-  Snackbar,
-  Paper,
-  Grid,
-  IconButton
+  Box, Button, Typography, CircularProgress, Container, Grid, Paper, IconButton
 } from '@mui/material';
-import {
-  EventSeat as SeatIcon,
-  Cancel as CancelIcon,
-  ArrowBack as BackIcon,
-  LocalMovies as ScreenIcon
-} from '@mui/icons-material';
 
 export default function SeatSelector() {
   const { cinemaId } = useParams();
-  const { state } = useLocation();
   const navigate = useNavigate();
-  const selectedSchedule = state?.schedule;
-
   const [room, setRoom] = useState(null);
-  const [seats, setSeats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedSeats, setSelectedSeats] = useState([]);
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success'
-  });
+  const [reservedSeats, setReservedSeats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dateSelected, setDateSelected] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [availableSeats, setAvailableSeats] = useState(0);
+  const [totalSeats, setTotalSeats] = useState(0);
 
   useEffect(() => {
-    console.log('cinemaId:', cinemaId);
-    console.log('schedule:', selectedSchedule);
-
-    if (!cinemaId || isNaN(Number(cinemaId))) {
-      setError('ID de sala no válido.');
-      setLoading(false);
-      return;
-    }
-
-    const fetchSeats = async () => {
-      try {
-const token = localStorage.getItem('token');
-const res = await api.get(`/rooms/${cinemaId}/seats`, {
-  headers: { Authorization: `Bearer ${token}` }
-});
-        console.log('Respuesta del servidor:', res.data);
-
-        const { data, roomInfo } = res.data;
-
-        if (!Array.isArray(data)) throw new Error('Formato de datos inválido');
-        setSeats(data);
-        setRoom(roomInfo || {
-          name: 'Sala desconocida',
-          movie_name: 'Película no especificada',
-          price: 0
-        });
-      } catch (err) {
-        console.error('Error al obtener asientos:', err);
-        setError('Error al cargar los asientos');
-      } finally {
+    api.get(`/rooms/${cinemaId}`)
+      .then(res => {
+        setRoom(res.data.data); // ✅ corregido
+        const total = res.data.data.num_rows * res.data.data.num_columns;
+        setTotalSeats(total);
+        setAvailableSeats(total);
         setLoading(false);
-      }
-    };
-
-    fetchSeats();
+      })
+      .catch(err => {
+        console.error('Error al cargar la sala:', err);
+        setLoading(false);
+      });
   }, [cinemaId]);
 
-  const toggleSeat = (seat) => {
-    if (seat.status === 'reserved') return;
+  useEffect(() => {
+    if (dateSelected && room) {
+      setLoading(true);
+      api.get(`/reservations`, {
+        params: { room_id: cinemaId, date: dateSelected }
+      }).then(res => {
+        const reserved = res.data.map(r => ({
+          row: r.seat_row,
+          column: r.seat_column,
+          id: `${r.seat_row}-${r.seat_column}`
+        }));
+        setReservedSeats(reserved);
+        setAvailableSeats(totalSeats - reserved.length);
+      }).catch(() => {
+        setReservedSeats([]);
+        setAvailableSeats(totalSeats);
+      }).finally(() => setLoading(false));
+    } else {
+      setReservedSeats([]);
+      setAvailableSeats(totalSeats);
+    }
+  }, [dateSelected, room, cinemaId, totalSeats]);
 
+  const toggleSeat = (seatId) => {
+    if (reservedSeats.some(s => s.id === seatId)) return;
     setSelectedSeats(prev =>
-      prev.some(s => s.id === seat.id)
-        ? prev.filter(s => s.id !== seat.id)
-        : [...prev, seat]
+      prev.includes(seatId)
+        ? prev.filter(id => id !== seatId)
+        : [...prev, seatId]
     );
   };
 
-  const handleReserve = async () => {
-    const user = JSON.parse(localStorage.getItem('user'));
-
-    if (!user || !selectedSchedule) {
-      showSnackbar('Faltan datos para reservar', 'error');
+  const confirmReservation = () => {
+    if (!dateSelected) {
+      setErrorMessage('Selecciona una fecha válida');
       return;
     }
-
     if (selectedSeats.length === 0) {
-      showSnackbar('Selecciona al menos un asiento', 'warning');
+      setErrorMessage('Selecciona al menos un asiento');
       return;
     }
 
-    try {
-      await api.post('/reservations', {
-        user_id: user.id,
-        schedule_id: selectedSchedule.id,
-        seats: selectedSeats.map(s => s.id)
-      });
+    navigate("/resumen", {
+      state: {
+        selectedSeats,
+        room,
+        totalPrice: selectedSeats.length * (room?.price || 0),
+        dateSelected
+      }
+    });
+  };
 
-      showSnackbar('Reservación exitosa!', 'success');
-      setSelectedSeats([]);
+  const handleDateChange = (e) => {
+    const selected = e.target.value;
+    const today = new Date();
+    const maxDate = new Date(today);
+    maxDate.setDate(today.getDate() + 8);
 
-      setSeats(prev =>
-        prev.map(seat =>
-          selectedSeats.some(s => s.id === seat.id)
-            ? { ...seat, status: 'reserved' }
-            : seat
-        )
-      );
-    } catch (err) {
-      console.error(err);
-      showSnackbar('Error al reservar. Intenta nuevamente', 'error');
+    const selectedDate = new Date(selected);
+    if (selectedDate >= today && selectedDate <= maxDate) {
+      setDateSelected(selected);
+      setErrorMessage('');
+    } else {
+      setDateSelected('');
+      setErrorMessage('Selecciona una fecha válida dentro de los próximos 8 días');
     }
   };
 
-  const showSnackbar = (message, severity) => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar(prev => ({ ...prev, open: false }));
-  };
+  const seatStyles = (isSelected, isReserved) => ({
+    width: 36,
+    height: 36,
+    minWidth: 36,
+    borderRadius: '4px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    fontSize: '1rem',
+    backgroundColor: isReserved
+      ? '#ffcdd2'
+      : isSelected
+        ? '#bbdefb'
+        : '#c8e6c9',
+    color: isReserved
+      ? '#d32f2f'
+      : isSelected
+        ? '#1976d2'
+        : '#388e3c',
+    border: `2px solid ${isReserved ? '#d32f2f' : isSelected ? '#1976d2' : '#388e3c'}`,
+    cursor: isReserved ? 'not-allowed' : 'pointer',
+    transition: 'all 0.2s ease'
+  });
 
   if (loading) return (
-    <Box display="flex" justifyContent="center" mt={4}>
+    <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
       <CircularProgress size={60} />
-    </Box>
+    </Container>
   );
 
-  if (error) return (
-    <Box p={3}>
-      <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-      <Button
-        variant="outlined"
-        startIcon={<BackIcon />}
-        onClick={() => navigate('/home')}
-      >
-        Volver
-      </Button>
-    </Box>
+  if (!room) return (
+    <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+      <Typography variant="h5" color="error">Error al cargar la sala.</Typography>
+    </Container>
   );
-
-  const seatsByRow = seats.reduce((acc, seat) => {
-    if (!acc[seat.row]) acc[seat.row] = [];
-    acc[seat.row].push(seat);
-    return acc;
-  }, {});
 
   return (
-    <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate('/home')} sx={{ mr: 2 }}>
-          <BackIcon />
-        </IconButton>
-        <Typography variant="h4" component="h1">
-          Selección de Asientos
-        </Typography>
-      </Box>
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h5" mb={1}>{room?.movie_name}</Typography>
+        <Typography variant="body1">Sala: {room?.name}</Typography>
+        <Typography variant="body1">Precio por asiento: ${room?.price || "0.00"}</Typography>
 
-      <Paper elevation={3} sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6">{room.movie_name}</Typography>
-        <Typography variant="subtitle1">Sala: {room.name}</Typography>
-        <Typography variant="body2">
-          Horario: {selectedSchedule?.time || 'No especificado'} |
-          Precio: ${room.price || '0'}
-        </Typography>
+        <Box mt={2}>
+          <Typography variant="h6">Selecciona la fecha</Typography>
+          <input
+            type="date"
+            value={dateSelected}
+            onChange={handleDateChange}
+            min={new Date().toISOString().split("T")[0]}
+            max={new Date(new Date().setDate(new Date().getDate() + 8)).toISOString().split("T")[0]}
+          />
+          {errorMessage && <Typography color="error">{errorMessage}</Typography>}
+        </Box>
       </Paper>
 
-      <Box sx={{
-        width: '100%',
-        height: 20,
-        bgcolor: 'grey.800',
-        mb: 4,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 1
-      }}>
-        <ScreenIcon sx={{ color: 'grey.300', fontSize: 16 }} />
-        <Typography variant="caption" sx={{ color: 'grey.300', ml: 1 }}>
-          PANTALLA
-        </Typography>
-      </Box>
-
-      <Box sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        mb: 4
-      }}>
-        {Object.entries(seatsByRow).map(([row, rowSeats]) => (
-          <Box key={row} sx={{ display: 'flex', mb: 1 }}>
-            <Typography sx={{ width: 24, textAlign: 'center', mr: 1 }}>
-              {row}
-            </Typography>
-            {rowSeats.map(seat => (
-              <Box
-                key={seat.id}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  m: 0.5,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  bgcolor: seat.status === 'reserved' ? 'error.main' :
-                    selectedSeats.some(s => s.id === seat.id) ? 'success.main' :
-                      'primary.main',
-                  color: 'white',
-                  borderRadius: 1,
-                  cursor: seat.status === 'reserved' ? 'default' : 'pointer',
-                  '&:hover': {
-                    opacity: seat.status === 'reserved' ? 1 : 0.8
-                  }
-                }}
-                onClick={() => toggleSeat(seat)}
-              >
-                <SeatIcon fontSize="small" />
-              </Box>
-            ))}
-          </Box>
-        ))}
-      </Box>
-
-      <Paper elevation={3} sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Resumen
-        </Typography>
-
-        {selectedSeats.length > 0 ? (
-          <>
-            <Typography>
-              Asientos seleccionados: {selectedSeats.length}
-            </Typography>
-            <Typography sx={{ mt: 1 }}>
-              Total: ${(room?.price || 0) * selectedSeats.length}
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
-              <Button
-                variant="contained"
-                color="success"
-                size="large"
-                onClick={handleReserve}
-                fullWidth
-              >
-                Confirmar ({selectedSeats.length})
-              </Button>
-
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<CancelIcon />}
-                onClick={() => setSelectedSeats([])}
-              >
-                Limpiar
-              </Button>
-            </Box>
-          </>
-        ) : (
-          <Typography color="text.secondary">
-            Selecciona tus asientos
-          </Typography>
-        )}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" mb={2}>Mapa de Asientos</Typography>
+        <Grid container spacing={1} justifyContent="center">
+          {Array.from({ length: room?.num_rows || 0 }, (_, rowIndex) => (
+            <Grid item xs={12} key={`row-${rowIndex}`}>
+              <Grid container spacing={1} justifyContent="center">
+                {Array.from({ length: room?.num_columns || 0 }, (_, colIndex) => {
+                  const seatId = `${rowIndex + 1}-${colIndex + 1}`;
+                  const isSelected = selectedSeats.includes(seatId);
+                  const isReserved = reservedSeats.some(s => s.id === seatId);
+                  return (
+                    <Grid item key={seatId}>
+                      <Box onClick={() => toggleSeat(seatId)} sx={seatStyles(isSelected, isReserved)}>
+                        {seatId}
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </Grid>
+          ))}
+        </Grid>
       </Paper>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6">Resumen</Typography>
+        <Typography>Asientos seleccionados: {selectedSeats.length > 0 ? selectedSeats.join(', ') : 'Ninguno'}</Typography>
+        <Typography>Total: ${((room?.price || 0) * selectedSeats.length).toFixed(2)}</Typography>
+        <Button
+          fullWidth
+          variant="contained"
+          onClick={confirmReservation}
+          disabled={!dateSelected || selectedSeats.length === 0}
+          sx={{ mt: 2 }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          Confirmar Reserva
+        </Button>
+      </Paper>
+    </Container>
   );
 }

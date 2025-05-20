@@ -1,29 +1,41 @@
 import { useEffect, useState } from 'react';
 import { Container, Grid, Card, CardContent, Button, Typography } from '@mui/material';
 import api from '../api/axios';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
   const [rooms, setRooms] = useState([]);
+  const navigate = useNavigate();
 
-useEffect(() => {
-  const fetchRooms = async () => {
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await api.get('/rooms', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setRooms(res.data.data); // asumiendo { success, data }
+      } catch (err) {
+        console.error('Error al cargar las salas:', err);
+      }
+    };
+
+    fetchRooms();
+  }, []);
+
+  const handleViewSeats = (room) => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await api.get('/rooms', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      console.log('Respuesta del servidor:', res.data);
-      setRooms(res.data.data || []);
+      const exampleSchedule = {
+        id: room.id * 10, // simulación de ID de horario
+        time: '19:00'
+      };
+      // ✅ Guardamos correctamente en localStorage
+      localStorage.setItem('selectedSchedule', JSON.stringify(exampleSchedule));
+      navigate(`/seats/${room.id}`); // ✅ Redirigimos
     } catch (err) {
-      console.error('Error al cargar las salas:', err);
+      console.error('Error al navegar a la vista de butacas:', err);
     }
   };
-
-  fetchRooms();
-}, []);
-
 
   return (
     <Container>
@@ -37,7 +49,11 @@ useEffect(() => {
                 <Typography variant="body2" color="text.secondary">
                   Película: {room.movie_name}
                 </Typography>
-                <Button variant="contained" fullWidth component={Link} to={`/seats/${room.id}`}>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={() => handleViewSeats(room)}
+                >
                   Ver Asientos
                 </Button>
               </CardContent>
