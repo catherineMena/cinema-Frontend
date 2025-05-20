@@ -8,10 +8,13 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Ruta pública para login */}
         <Route path="/login" element={<Login />} />
+
+        {/* Rutas protegidas */}
         <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
         <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-        <Route path="/seats/:roomId" element={<ProtectedRoute><SeatsSelector /></ProtectedRoute>} />
+        <Route path="/seats/:cinemaId" element={<ProtectedRoute><SeatsSelector /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );
